@@ -2,95 +2,97 @@
 from flask import Flask, request
 import logging
 import paramiko
+import json
 import requests
 
-app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# === CONFIGURACIÓN (después las pondrás en Render como variables de entorno) ===
-TOKEN = "7985103761:AAEcCdKMmchwm8rkXyLP0eQ5VvLJDNpfLBE"
-VPS_IP = "149.50.150.163"
+# === CONFIGURACIÓN (usar variables de entorno en Render) ===
+TOKEN = "TU_TOKEN_DE_TELEGRAM"
+VPS_IP = "TU_IP_DEL_VPS"
 VPS_USER = "root"
-VPS_PASS = "TU_CONTRASENIA_DEL_VPS"  # ← CAMBIA ESTO
+VPS_PASS = "TU_CONTRASENIA"
 
-# === FUNCIÓN PARA EJECUTAR COMANDOS EN EL VPS ===
-def ejecutar_en_vps(comando):
+app = Flask(__name__)
+logger = app.logger
+
+# === CONEXIÓN SSH AL VPS ===
+def ssh_command(cmd):
     try:
-        logger.info(f"Ejecutando en VPS: {comando}")
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(VPS_IP, username=VPS_USER, password=VPS_PASS, timeout=10)
-
-        stdin, stdout, stderr = client.exec_command(comando)
-        output = stdout.read().decode('utf-8').strip()
-        error = stderr.read().decode('utf-8').strip()
+        stdin, stdout, stderr = client.exec_command(cmd)
+        output = stdout.read().decode('utf-8') or "✅ Comando ejecutado."
+        error = stderr.read().decode('utf-8')
         client.close()
-
-        if error:
-            logger.error(f"Error SSH: {error}")
-            return f"❌ {error}"
-        return output or "✅ Comando ejecutado."
+        return f"{output}\n{error}".strip() if error else output.strip()
     except Exception as e:
-        logger.error(f"Fallo SSH: {str(e)}")
-        return f"🔴 SSH falló: {str(e)}"
+        return f"❌ Error SSH: {str(e)}"
 
-# === BOTONES (solo uno) ===
-teclado_test = {
+# === MENÚ DE BOTONES ===
+keyboard = {
     "keyboard": [
-        [{"text": "🔐 Generar Test"}]
+        [{"text": "🔐 Generar Test"}],
+        [{"text": "📊 Usuarios Online"}, {"text": "⚡ SpeedTest"}]
     ],
-    "resize_keyboard": True,
-    "one_time_keyboard": False
+    "resize_keyboard": True
 }
 
-# === WEBHOOK ===
+# === RUTA DEL WEBHOOK ===
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.get_json()
         logger.info(f"Datos recibidos: {data}")
 
-        # Verificar si hay un mensaje válido
-        if 'message' not in data:
-            logger.warning("No se encontró 'message' en los datos recibidos.")
-            return 'ok', 200
-
         chat_id = data['message']['chat']['id']
         text = data['message']['text']
 
-        # Comando /start
-        if text == "/start":
-            logger.info(f"/start recibido de {chat_id}")
-            enviar_mensaje(chat_id, "👋 Hola! Presiona el botón para generar un test.", teclado_test)
+        reply = {
+            "chat_id": chat_id,
+            "text": "🤖 Usa el menú:",
+            "reply_markup": keyboard
+        }
 
-        # Botón: Generar Test
+        if text == "/start":
+            logger.info("Recibido comando /start")
+            reply["text"] = "👋 ¡Hola! Usa el menú para gestionar tu VPS."
+
         elif text == "🔐 Generar Test":
-            enviar_mensaje(chat_id, "⏳ Ejecutando... (esto puede tardar unos segundos)")
-            resultado = ejecutar_en_vps("/bin/criarteste")
-            enviar_mensaje(chat_id, f"<b>Resultado:</b>\n<pre>{resultado}</pre>", parse_mode="HTML")
+            reply["text"] = "⏳ Generando usuario de prueba..."
+            result = ssh_command("/bin/criarteste")  # Ejecuta directamente
+            reply["text"] = f"<b>Usuario de prueba creado:</b>\n<pre>{result}</pre>"
+            reply["parse_mode"] = "HTML"
+
+        elif text == "📊 Usuarios Online":
+            reply["text"] = "🔍 Cargando usuarios online..."
+            result = ssh_command("/bin/sshmonitor")
+            reply["text"] = f"<b>Usuarios Online:</b>\n<pre>{result}</pre>"
+            reply["parse_mode"] = "HTML"
+
+        elif text == "⚡ SpeedTest":
+            reply["text"] = "📡 Ejecutando speedtest..."
+            result = ssh_command("/bin/velocity")
+            reply["text"] = f"<b>SpeedTest:</b>\n<pre>{result}</pre>"
+            reply["parse_mode"] = "HTML"
+
+        else:
+            reply["text"] = "🤖 Usa el menú del bot."
+
+        # Enviar respuesta a Telegram
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        try:
+            response = requests.post(url, json=reply, timeout=10)
+            logger.info(f"Respuesta de Telegram: {response.status_code} - {response.text}")
+        except Exception as e:
+            logger.error(f"❌ Error al enviar a Telegram: {e}")
 
         return 'ok', 200
 
     except Exception as e:
-        logger.error(f"Error en webhook: {e}")
+        logger.error(f"Error: {e}")
         return 'error', 500
 
-# === FUNCION PARA ENVIAR MENSAJES A TELEGRAM ===
-def enviar_mensaje(chat_id, texto, reply_markup=None, parse_mode=None):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": texto,
-        "parse_mode": parse_mode
-    }
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
-
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        logger.info(f"Enviado a Telegram: {response.status_code} - {response.text}")
-    except Exception as e:
-        logger.error(f"No se pudo enviar mensaje: {e}")
-
-# === FIN DEL CÓDIGO ===
+# === RUTA DE PRUEBA ===
+@app.route('/')
+def home():
+    return "Bot de Telegram funcionando en Render 🚀", 200
