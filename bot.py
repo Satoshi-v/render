@@ -1,4 +1,4 @@
-# bot.py - Bot MÍNIMO con un solo botón
+# bot.py - Bot de Telegram con Webhook + SSH a tu VPS
 from flask import Flask, request
 import logging
 import paramiko
@@ -13,11 +13,6 @@ TOKEN = "7985103761:AAEcCdKMmchwm8rkXyLP0eQ5VvLJDNpfLBE"
 VPS_IP = "149.50.150.163"
 VPS_USER = "root"
 VPS_PASS = "TU_CONTRASENIA_DEL_VPS"  # ← CAMBIA ESTO
-
-# === RUTA PRINCIPAL ===
-@app.route('/')
-def home():
-    return "Bot mínimo activo. Usa /webhook", 200
 
 # === FUNCIÓN PARA EJECUTAR COMANDOS EN EL VPS ===
 def ejecutar_en_vps(comando):
@@ -54,9 +49,11 @@ teclado_test = {
 def webhook():
     try:
         data = request.get_json()
-        logger.info(f"📩 Datos recibidos: {data}")
+        logger.info(f"Datos recibidos: {data}")
 
-        if 'message' not in 
+        # Verificar si hay un mensaje válido
+        if 'message' not in data:
+            logger.warning("No se encontró 'message' en los datos recibidos.")
             return 'ok', 200
 
         chat_id = data['message']['chat']['id']
@@ -64,7 +61,7 @@ def webhook():
 
         # Comando /start
         if text == "/start":
-            logger.info(f"✅ /start recibido de {chat_id}")
+            logger.info(f"/start recibido de {chat_id}")
             enviar_mensaje(chat_id, "👋 Hola! Presiona el botón para generar un test.", teclado_test)
 
         # Botón: Generar Test
@@ -76,7 +73,7 @@ def webhook():
         return 'ok', 200
 
     except Exception as e:
-        logger.error(f"❌ Error en webhook: {e}")
+        logger.error(f"Error en webhook: {e}")
         return 'error', 500
 
 # === FUNCION PARA ENVIAR MENSAJES A TELEGRAM ===
@@ -92,8 +89,8 @@ def enviar_mensaje(chat_id, texto, reply_markup=None, parse_mode=None):
 
     try:
         response = requests.post(url, json=payload, timeout=10)
-        logger.info(f"📤 Enviado a Telegram: {response.status_code} - {response.text}")
+        logger.info(f"Enviado a Telegram: {response.status_code} - {response.text}")
     except Exception as e:
-        logger.error(f"❌ No se pudo enviar mensaje: {e}")
+        logger.error(f"No se pudo enviar mensaje: {e}")
 
 # === FIN DEL CÓDIGO ===
