@@ -1,34 +1,45 @@
-# bot.py - Bot de Telegram con Webhook + SSH a tu VPS
+# bot.py - Versión con depuración avanzada
 from flask import Flask, request
 import logging
 import paramiko
-import json
 import requests
 
-# === CONFIGURACIÓN (usar variables de entorno en Render) ===
-TOKEN = "TU_TOKEN_DE_TELEGRAM"  # ← Render: añade como variable
+# === CONFIGURACIÓN ===
+TOKEN = "TU_TOKEN_DE_TELEGRAM"
 VPS_IP = "TU_IP_DEL_VPS"
 VPS_USER = "root"
 VPS_PASS = "TU_CONTRASENIA"
 
 app = Flask(__name__)
-logger = app.logger
 
-# === CONEXIÓN SSH AL VPS ===
+# Configurar logging para ver todo en los logs de Render
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# === FUNCIÓN SSH MEJORADA ===
 def ssh_command(cmd):
     try:
+        logger.info(f"Ejecutando comando SSH: {cmd}")
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(VPS_IP, username=VPS_USER, password=VPS_PASS, timeout=10)
         stdin, stdout, stderr = client.exec_command(cmd)
-        output = stdout.read().decode('utf-8') or "✅ Comando ejecutado."
+        output = stdout.read().decode('utf-8')
         error = stderr.read().decode('utf-8')
         client.close()
-        return f"{output}\n{error}".strip() if error else output.strip()
+
+        if error:
+            logger.error(f"Error en SSH: {error}")
+            return f"❌ Error: {error.strip()}"
+        if output:
+            logger.info(f"Salida SSH: {output.strip()}")
+            return output.strip()
+        return "✅ Comando ejecutado (sin salida)."
     except Exception as e:
+        logger.error(f"Excepción en SSH: {str(e)}")
         return f"❌ Error SSH: {str(e)}"
 
-# === MENÚ DE BOTONES (sin "Reiniciar Servicios") ===
+# === MENÚ ===
 keyboard = {
     "keyboard": [
         [{"text": "🔐 Generar Test"}],
@@ -37,56 +48,73 @@ keyboard = {
     "resize_keyboard": True
 }
 
-# === RUTA DEL WEBHOOK ===
+# === RUTA WEBHOOK ===
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.get_json()
-        logger.info(f"Datos recibidos: {data}")
+        logger.info(f"🔹 Datos recibidos de Telegram: {data}")  # ← Aquí ves si llega algo
+
+        if not data:
+            logger.warning("No se recibieron datos")
+            return 'No data', 400
+
+        # Verificar si es un mensaje
+        if 'message' not in data:
+            logger.warning("No es un mensaje válido")
+            return 'Not a message', 200
 
         chat_id = data['message']['chat']['id']
         text = data['message']['text']
+        logger.info(f"📩 Mensaje recibido de {chat_id}: {text}")  # ← Aquí ves si /start llega
 
-        reply = {
-            "chat_id": chat_id,
-            "text": "🤖 Usa el menú:",
-            "reply_markup": keyboard
-        }
+        # Enviar respuesta
+        def send_telegram(texto, markup=None):
+            reply = {
+                "chat_id": chat_id,
+                "text": texto,
+                "parse_mode": "HTML"
+            }
+            if markup:
+                reply["reply_markup"] = markup
 
+            logger.info(f"📤 Enviando a Telegram: {reply}")
+            try:
+                requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json=reply, timeout=10)
+            except Exception as e:
+                logger.error(f"❌ Error al enviar a Telegram: {e}")
+
+        # Procesar comandos
         if text == "/start":
-            reply["text"] = "👋 ¡Hola! Usa el menú para gestionar tu VPS."
+            logger.info("✅ Comando /start detectado")
+            send_telegram("👋 ¡Hola! Usa el menú:", keyboard)
 
         elif text == "🔐 Generar Test":
-            reply["text"] = "⏳ Generando usuario de prueba..."
-            result = ssh_command("/bin/criarteste")  # ✅ Ejecuta directamente
-            reply["text"] = f"<b>Usuario de prueba creado:</b>\n<pre>{result}</pre>"
-            reply["parse_mode"] = "HTML"
+            send_telegram("⏳ Generando test...")
+            result = ssh_command("/bin/criarteste")
+            send_telegram(f"<b>Resultado:</b>\n<pre>{result}</pre>")
 
         elif text == "📊 Usuarios Online":
-            reply["text"] = "🔍 Cargando usuarios online..."
+            send_telegram("🔍 Cargando...")
             result = ssh_command("/bin/sshmonitor")
-            reply["text"] = f"<b>Usuarios Online:</b>\n<pre>{result}</pre>"
-            reply["parse_mode"] = "HTML"
+            send_telegram(f"<b>Usuarios:</b>\n<pre>{result}</pre>")
 
         elif text == "⚡ SpeedTest":
-            reply["text"] = "📡 Ejecutando speedtest..."
+            send_telegram("📡 Speedtest...")
             result = ssh_command("/bin/velocity")
-            reply["text"] = f"<b>SpeedTest:</b>\n<pre>{result}</pre>"
-            reply["parse_mode"] = "HTML"
+            send_telegram(f"<b>SpeedTest:</b>\n<pre>{result}</pre>")
 
         else:
-            reply["text"] = "🤖 Usa el menú del bot."
+            send_telegram("🤖 Usa el menú:", keyboard)
 
-        # Enviar respuesta a Telegram
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        requests.post(url, json=reply)
         return 'ok', 200
 
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"❌ Error en webhook: {str(e)}")
         return 'error', 500
 
 # === RUTA DE PRUEBA ===
 @app.route('/')
 def home():
-    return "Bot de Telegram funcionando en Render 🚀", 200
+    logger.info("🏠 Ruta / accedida")
+    return "Bot funcionando 🚀", 200
