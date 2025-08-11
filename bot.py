@@ -14,10 +14,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # === CONFIGURACIÓN (en Render como variables de entorno) ===
-TOKEN = "7985103761:AAEcCdKMmchwm8rkXyLP0eQ5VvLJDNpfLBE"
-VPS_IP = "149.50.150.163"
-VPS_USER = "root"
-VPS_PASS = "TU_CONTRASENIA_DEL_VPS"  # ← CAMBIA ESTO
+TOKEN = ""
+VPS_IP = ""
+VPS_USER = ""
+VPS_PASS = ""  # ← CAMBIA ESTO
 
 # === BASE DE DATOS para controlar tests (1 cada 7 días) ===
 conn = sqlite3.connect('bot_database.db', check_same_thread=False)
