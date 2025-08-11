@@ -13,10 +13,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # === CONFIGURACIÓN (en Render como variables de entorno) ===
-TOKEN = "7985103761:AAEcCdKMmchwm8rkXyLP0eQ5VvLJDNpfLBE"  # ← Cambia en Render
-VPS_IP = "102.129.137.108"
-VPS_USER = "root"
-VPS_PASS = "Tteam2215"  # ← Cambia esto
+TOKEN = ""  # ← Cambia en Render
+VPS_IP = ""
+VPS_USER = ""
+VPS_PASS = ""  # ← Cambia esto
 
 # === Diccionario temporal para controlar pruebas (como user_data en el original) ===
 user_data = {}
