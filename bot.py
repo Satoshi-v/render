@@ -1,22 +1,17 @@
-# bot.py
+# bot.py - Bot de Telegram con Webhook + SSH a tu VPS
 from flask import Flask, request
 import logging
 import paramiko
 import json
+import requests
 
-# === CONFIGURACIÓN (usa variables de entorno en Render) ===
-TOKEN = ""  # ← En Render: añade como secreto
-VPS_IP = ""
-VPS_USER = ""
-VPS_PASS = ""
-
-# URL del webhook (Render te dará esta URL)
-# Ej: https://tu-bot.onrender.com/webhook
+# === CONFIGURACIÓN (usar variables de entorno en Render) ===
+TOKEN = "TU_TOKEN_DE_TELEGRAM"  # ← Render: añade como variable
+VPS_IP = "TU_IP_DEL_VPS"
+VPS_USER = "root"
+VPS_PASS = "TU_CONTRASENIA"
 
 app = Flask(__name__)
-
-# === LOGGING ===
-logging.basicConfig(level=logging.INFO)
 logger = app.logger
 
 # === CONEXIÓN SSH AL VPS ===
@@ -33,12 +28,11 @@ def ssh_command(cmd):
     except Exception as e:
         return f"❌ Error SSH: {str(e)}"
 
-# === MENÚ DE BOTONES (para devolver en Telegram) ===
+# === MENÚ DE BOTONES (sin "Reiniciar Servicios") ===
 keyboard = {
     "keyboard": [
         [{"text": "🔐 Generar Test"}],
-        [{"text": "📊 Usuarios Online"}, {"text": "⚡ SpeedTest"}],
-        [{"text": "🔄 Reiniciar Servicios"}]
+        [{"text": "📊 Usuarios Online"}, {"text": "⚡ SpeedTest"}]
     ],
     "resize_keyboard": True
 }
@@ -50,49 +44,42 @@ def webhook():
         data = request.get_json()
         logger.info(f"Datos recibidos: {data}")
 
-        # Extraer datos del mensaje
         chat_id = data['message']['chat']['id']
         text = data['message']['text']
 
-        # Respuesta base
         reply = {
             "chat_id": chat_id,
             "text": "🤖 Usa el menú:",
             "reply_markup": keyboard
         }
 
-        # Ejecutar comandos
         if text == "/start":
             reply["text"] = "👋 ¡Hola! Usa el menú para gestionar tu VPS."
 
         elif text == "🔐 Generar Test":
             reply["text"] = "⏳ Generando usuario de prueba..."
-            result = ssh_command("criarteste")
+            result = ssh_command("/bin/criarteste")  # ✅ Ejecuta directamente
             reply["text"] = f"<b>Usuario de prueba creado:</b>\n<pre>{result}</pre>"
             reply["parse_mode"] = "HTML"
 
         elif text == "📊 Usuarios Online":
             reply["text"] = "🔍 Cargando usuarios online..."
-            result = ssh_command("sshmonitor")
+            result = ssh_command("/bin/sshmonitor")
             reply["text"] = f"<b>Usuarios Online:</b>\n<pre>{result}</pre>"
             reply["parse_mode"] = "HTML"
 
         elif text == "⚡ SpeedTest":
             reply["text"] = "📡 Ejecutando speedtest..."
-            result = ssh_command("velocity")
+            result = ssh_command("/bin/velocity")
             reply["text"] = f"<b>SpeedTest:</b>\n<pre>{result}</pre>"
             reply["parse_mode"] = "HTML"
 
-        elif text == "🔄 Reiniciar Servicios":
-            reply["text"] = "🔄 Reiniciando servicios..."
-            result = ssh_command("reiniciarservicos")
-            reply["text"] = "✅ Servicios reiniciados."
+        else:
+            reply["text"] = "🤖 Usa el menú del bot."
 
         # Enviar respuesta a Telegram
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        import requests
         requests.post(url, json=reply)
-
         return 'ok', 200
 
     except Exception as e:
