@@ -6,7 +6,7 @@ import json
 import requests
 
 # === CONFIGURACIÓN (usar variables de entorno en Render) ===
-TOKEN = "TU_TOKEN_DE_TELEGRAM"  # ← Render: añade como variable
+TOKEN = "TU_TOKEN_DE_TELEGRAM"
 VPS_IP = "TU_IP_DEL_VPS"
 VPS_USER = "root"
 VPS_PASS = "TU_CONTRASENIA"
@@ -42,7 +42,7 @@ keyboard = {
 def webhook():
     try:
         data = request.get_json()
-        logger.info(f"Datos recibidos: {data}")
+        logger.info(f"Datos recibidos: {data}")  # Registra todos los datos recibidos
 
         chat_id = data['message']['chat']['id']
         text = data['message']['text']
