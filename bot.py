@@ -9,10 +9,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # === CONFIGURACIÓN (después las pondrás en Render como variables de entorno) ===
-TOKEN = "7985103761:AAEcCdKMmchwm8rkXyLP0eQ5VvLJDNpfLBE"
-VPS_IP = "149.50.150.163"
-VPS_USER = "root"
-VPS_PASS = "TU_CONTRASENIA_DEL_VPS"  # ← CAMBIA ESTO
+TOKEN = ""
+VPS_IP = ""
+VPS_USER = ""
+VPS_PASS = ""  # ← CAMBIA ESTO
 
 # === FUNCIÓN PARA EJECUTAR COMANDOS EN EL VPS ===
 def ejecutar_en_vps(comando):
