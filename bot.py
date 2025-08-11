@@ -1,4 +1,4 @@
-# bot.py - Bot idéntico al original, pero con webhook y usando tu sistema real
+# bot.py - Bot con webhook, sin /start, con lógica de generación de test del original
 from flask import Flask, request
 import logging
 import paramiko
@@ -7,19 +7,28 @@ import json
 import random
 import string
 import time
+import sqlite3
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # === CONFIGURACIÓN (en Render como variables de entorno) ===
-TOKEN = "7985103761:AAEcCdKMmchwm8rkXyLP0eQ5VvLJDNpfLBE"  # ← Cambia en Render
+TOKEN = "7985103761:AAEcCdKMmchwm8rkXyLP0eQ5VvLJDNpfLBE"
 VPS_IP = "149.50.150.163"
 VPS_USER = "root"
-VPS_PASS = "TU_CONTRASENIA_DEL_VPS"  # ← Cambia esto
+VPS_PASS = "TU_CONTRASENIA_DEL_VPS"  # ← CAMBIA ESTO
 
-# === Diccionario temporal para controlar pruebas (como user_data en el original) ===
-user_data = {}
+# === BASE DE DATOS para controlar tests (1 cada 7 días) ===
+conn = sqlite3.connect('bot_database.db', check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        last_test_timestamp REAL
+    )
+''')
+conn.commit()
 
 # === EJECUTAR COMANDO EN VPS ===
 def ssh_command(cmd):
@@ -27,13 +36,23 @@ def ssh_command(cmd):
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(VPS_IP, username=VPS_USER, password=VPS_PASS, timeout=10)
-        stdin, stdout, stderr = client.exec_command(f"bash -l -c '{cmd}'")
+        stdin, stdout, stderr = client.exec_command(cmd)
         output = stdout.read().decode('utf-8').strip()
         error = stderr.read().decode('utf-8').strip()
         client.close()
         return f"{output}\n{error}".strip() if error else output
     except Exception as e:
         return f"❌ Error SSH: {str(e)}"
+
+# === MENÚ CON BOTÓN DE TESTE ===
+def get_test_menu():
+    return json.dumps({
+        "inline_keyboard": [
+            [{"text": "GERAR TESTE SSH 🤖", "callback_data": "generate_ssh_test"}],
+            [{"text": "BOT DO WHATS", "url": "http://wa.me/+5575991044171"}],
+            [{"text": "SUPORTE ⚙️", "url": "https://t.me/ntsoff1kytbr"}]
+        ]
+    })
 
 # === ENVIAR MENSAJE A TELEGRAM ===
 def enviar(chat_id, texto, reply_markup=None, parse_mode=None):
@@ -50,16 +69,6 @@ def enviar(chat_id, texto, reply_markup=None, parse_mode=None):
     except Exception as e:
         logger.error(f"❌ No se pudo enviar: {e}")
 
-# === MENÚ PRINCIPAL ===
-def get_start_menu():
-    return json.dumps({
-        "inline_keyboard": [
-            [{"text": "GERAR TESTE SSH 🤖", "callback_data": "generate_ssh_test"}],
-            [{"text": "BOT DO WHATS", "url": "http://wa.me/+5575991044171"}],
-            [{"text": "SUPORTE ⚙️", "url": "https://t.me/ntsoff1kytbr"}]
-        ]
-    })
-
 # === RUTA PRINCIPAL ===
 @app.route('/')
 def home():
@@ -72,11 +81,12 @@ def webhook():
         data = request.get_json()
         logger.info(f"📩 Recibido: {data}")
 
-        # Manejar /start
-        if 'message' in data and data['message']['text'] == '/start':
-            user_name = data['message']['from']['first_name']
+        # === RESPONDER AL MENSAJE DE CUALQUIER USUARIO CON LA FOTO Y EL MENÚ ===
+        if 'message' in data and 'text' in data['message']:
             chat_id = data['message']['chat']['id']
+            user_name = data['message']['from']['first_name']
 
+            # Mensaje de bienvenida con foto y botones
             start_message = (
                 f"Olá {user_name}, Seja bem-vindo!\n"
                 "APP PARA USAR O TESTE SSH📡 -> /apk\n"
@@ -84,70 +94,69 @@ def webhook():
                 "<a href='https://ntsoff1.000webhostapp.com'>COMPRAR ACESSO VIP👤</a>"
             )
 
-            enviar(
-                chat_id,
-                start_message,
-                reply_markup=get_start_menu(),
-                parse_mode="HTML"
-            )
+            # Enviar foto con mensaje y botones
+            photo_url = "https://ntsoff1.000webhostapp.com/Capture%202022-05-20%2001.14.26_105203.jpg"
+            url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+            payload = {
+                "chat_id": chat_id,
+                "photo": photo_url,
+                "caption": start_message,
+                "parse_mode": "HTML",
+                "reply_markup": get_test_menu()
+            }
+            try:
+                response = requests.post(url, json=payload, timeout=10)
+                logger.info(f"📸 Foto enviada: {response.status_code} - {response.text}")
+            except Exception as e:
+                logger.error(f"❌ No se pudo enviar foto: {e}")
 
-        # Manejar callback de botones
-        elif 'callback_query' in data:
+        # === MANEJAR BOTÓN "GERAR TESTE SSH" ===
+        elif 'callback_query' in 
             query = data['callback_query']
             user_id = query['from']['id']
             chat_id = query['message']['chat']['id']
-            data_callback = query['data']
 
-            if data_callback == "generate_ssh_test":
-                # Verificar si ya solicitó un test en los últimos 7 días
-                if user_id in user_data and time.time() - user_data[user_id]['timestamp'] < 7 * 24 * 60 * 60:
+            if query['data'] == "generate_ssh_test":
+                # Verificar si ya hizo un test en los últimos 7 días
+                cursor.execute("SELECT last_test_timestamp FROM users WHERE user_id=?", (user_id,))
+                result = cursor.fetchone()
+
+                if result and time.time() - result[0] < 7 * 24 * 60 * 60:
                     error_msg = (
                         "⚠️ OPA VOCÊ JÁ SOLICITOU UM TESTE\n"
                         "AGUARDE 7 DIAS E PEÇA UM NOVO TESTE\n"
                         "COMPRAR ACESSO VIP @ntsoff1kytbr"
                     )
                     enviar(chat_id, error_msg)
-                    # Borrar mensaje después de 10 segundos
                     time.sleep(10)
-                    # Aquí no podemos borrar el mensaje sin bot, pero puedes usar un job si usas polling
                 else:
-                    # Generar test usando tu sistema real
-                    enviar(chat_id, "⏳ Ejecutando... (esto puede tardar unos segundos)")
-                    resultado = ssh_command("/bin/criarteste")
+                    # Generar usuario y contraseña aleatorios
+                    random_username = f"teste{''.join(random.choices(string.ascii_lowercase, k=5))}"
+                    random_password = ''.join(random.choices(string.digits, k=6))
 
-                    # Extraer usuario y contraseña del resultado (ajusta según tu salida)
-                    # Suponiendo que la salida es como:
-                    # USUÁRIO: testeabc123
-                    # SENHA: 123456
-                    lines = resultado.split('\n')
-                    username = "não encontrado"
-                    password = "não encontrado"
-                    for line in lines:
-                        if "USUÁRIO:" in line:
-                            username = line.split("USUÁRIO:")[-1].strip()
-                        if "SENHA:" in line:
-                            password = line.split("SENHA:")[-1].strip()
+                    # Comando para crear usuario en el VPS
+                    create_user_command = (
+                        f"sudo useradd -m -e $(date -d '+1 day' '+%Y-%m-%d') "
+                        f"{random_username} -p $(openssl passwd -1 {random_password})"
+                    )
+                    ssh_command(create_user_command)
 
+                    # Enviar credenciales al usuario
                     ssh_test_info = (
                         f"⚠️ TESTE GERADO COM SUCESSO! ⚠️\n"
-                        f"👤 USUÁRIO: <code>{username}</code>\n"
-                        f"🔒 SENHA: <code>{password}</code>\n"
+                        f"👤 USUÁRIO: <code>{random_username}</code>\n"
+                        f"🔒 SENHA: <code><pre>{random_password}</pre></code>\n"
                         f"⏳ EXPIRA EM: 1 DIA\n"
                         f"️📂 BAIXAR APP  /apk"
                     )
                     enviar(chat_id, ssh_test_info, parse_mode="HTML")
 
                     # Guardar timestamp
-                    user_data[user_id] = {
-                        'username': username,
-                        'password': password,
-                        'timestamp': time.time()
-                    }
+                    cursor.execute("INSERT OR REPLACE INTO users (user_id, last_test_timestamp) VALUES (?, ?)",
+                                   (user_id, time.time()))
+                    conn.commit()
 
-            elif data_callback == "menu":
-                enviar(chat_id, "Escolha uma opção:", reply_markup=get_start_menu())
-
-        # Manejar comandos como /apk, /fogo_vpn, /doa
+        # === COMANDOS: /apk, /fogo_vpn, /doa ===
         elif 'message' in data and 'text' in data['message']:
             text = data['message']['text']
             chat_id = data['message']['chat']['id']
@@ -165,18 +174,16 @@ def webhook():
         logger.error(f"❌ Error: {e}")
         return 'error', 500
 
-# === COMANDOS ===
+# === COMANDOS DE ARCHIVOS Y DONACIONES ===
 def enviar_apk(chat_id):
     enviar(chat_id, "Enviando arquivo 📁. Por favor, aguarde... 📌", parse_mode='HTML')
     time.sleep(2)
-    url = 'https://nts4g.000webhostapp.com/CAIXA_VIP.apk'
+    apk_url = 'https://nts4g.000webhostapp.com/CAIXA_VIP.apk'
     try:
-        response = requests.get(url)
+        response = requests.get(apk_url)
         if response.status_code == 200:
-            # Telegram no permite enviar archivos directamente desde URL, necesitas subirlo
-            # Pero como es webhook, no podemos usar bot.send_document fácilmente
-            # Solución: enviar enlace de descarga
-            enviar(chat_id, f"📥 Descarga el APK: {url}")
+            # Telegram no permite enviar desde URL directamente, así que usamos un enlace
+            enviar(chat_id, f"📥 Descarga tu APK: {apk_url}")
         else:
             enviar(chat_id, "❌ Ocorreu um erro ao baixar o arquivo.")
     except Exception as e:
@@ -185,11 +192,14 @@ def enviar_apk(chat_id):
 def enviar_apk2(chat_id):
     enviar(chat_id, "Enviando arquivo 📁. Por favor, aguarde... 📌", parse_mode='HTML')
     time.sleep(2)
-    url = 'https://nts4g.000webhostapp.com/FOGO_VPN.apk'
+    apk_url = 'https://nts4g.000webhostapp.com/FOGO_VPN.apk'
     try:
-        response = requests.get(url)
+        response = requests.get(apk_url)
         if response.status_code == 200:
-            enviar(chat_id, f"📥 Descarga FOGO_VPN: {url}")
+            mensagem_personalizada = "⚙️ 𝑂 𝐴𝑃𝑃 𝑁𝐴̃𝑂 𝑃𝑅𝐸𝐶𝐼𝑆𝐴 𝐶𝑂𝐿𝑂𝐶𝐴𝑅 𝑁𝐸𝑀 🔐𝑆𝐸𝑁𝐻𝐴 𝐸 𝑁𝐸𝑀 👤𝑈𝑆𝑈𝐴́𝑅𝐼𝑂\n🗃️ 𝐸𝑁𝑉𝐼𝐴𝑁𝐷𝑂 𝐴𝐺𝑈𝐴𝑅𝐷𝐸 𝑂 𝐴𝑃𝑃"
+            enviar(chat_id, mensagem_personalizada, parse_mode='HTML')
+            time.sleep(3)
+            enviar(chat_id, f"📥 FOGO_VPN: {apk_url}")
         else:
             enviar(chat_id, "❌ Ocorreu um erro ao baixar o arquivo.")
     except Exception as e:
