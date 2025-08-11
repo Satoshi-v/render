@@ -1,38 +1,47 @@
-# bot.py - Bot que usa TU sistema real
+# bot.py - Bot de Telegram con Webhook + SSH a tu VPS
 from flask import Flask, request
 import logging
 import paramiko
-import json
 import requests
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# === CONFIGURACIÓN (en Render como variables de entorno) ===
+# === CONFIGURACIÓN (después las pondrás en Render como variables de entorno) ===
 TOKEN = "7985103761:AAEcCdKMmchwm8rkXyLP0eQ5VvLJDNpfLBE"
 VPS_IP = "149.50.150.163"
 VPS_USER = "root"
-VPS_PASS = "TU_CONTRASENIA_DEL_VPS"
+VPS_PASS = "TU_CONTRASENIA_DEL_VPS"  # ← CAMBIA ESTO
 
-# === EJECUTAR COMANDO EN VPS ===
-def ssh_command(cmd):
+# === FUNCIÓN PARA EJECUTAR COMANDOS EN EL VPS ===
+def ejecutar_en_vps(comando):
     try:
+        logger.info(f"Ejecutando en VPS: {comando}")
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(VPS_IP, username=VPS_USER, password=VPS_PASS, timeout=10)
-        stdin, stdout, stderr = client.exec_command(f"bash -l -c '{cmd}'")
+
+        stdin, stdout, stderr = client.exec_command(comando)
         output = stdout.read().decode('utf-8').strip()
         error = stderr.read().decode('utf-8').strip()
         client.close()
-        return f"{output}\n{error}".strip() if error else output
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
 
-# === MENÚ CON UN SOLO BOTÓN ===
-teclado = {
-    "keyboard": [[{"text": "🔐 Generar Test"}]],
-    "resize_keyboard": True
+        if error:
+            logger.error(f"Error SSH: {error}")
+            return f"❌ {error}"
+        return output or "✅ Comando ejecutado."
+    except Exception as e:
+        logger.error(f"Fallo SSH: {str(e)}")
+        return f"🔴 SSH falló: {str(e)}"
+
+# === BOTONES (solo uno) ===
+teclado_test = {
+    "keyboard": [
+        [{"text": "🔐 Generar Test"}]
+    ],
+    "resize_keyboard": True,
+    "one_time_keyboard": False
 }
 
 # === WEBHOOK ===
@@ -40,43 +49,48 @@ teclado = {
 def webhook():
     try:
         data = request.get_json()
-        logger.info(f"📩 Recibido: {data}")
+        logger.info(f"Datos recibidos: {data}")
 
-        if 'message' not in 
+        # Verificar si hay un mensaje válido
+        if 'message' not in data:
+            logger.warning("No se encontró 'message' en los datos recibidos.")
             return 'ok', 200
 
         chat_id = data['message']['chat']['id']
         text = data['message']['text']
 
+        # Comando /start
         if text == "/start":
-            enviar(chat_id, "👋 Hola! Presiona el botón para generar un test.", teclado)
+            logger.info(f"/start recibido de {chat_id}")
+            enviar_mensaje(chat_id, "👋 Hola! Presiona el botón para generar un test.", teclado_test)
 
+        # Botón: Generar Test
         elif text == "🔐 Generar Test":
-            enviar(chat_id, "⏳ Generando test...")
-            resultado = ssh_command("/bin/criarteste")
-            enviar(chat_id, f"<b>Resultado:</b>\n<pre>{resultado}</pre>", parse_mode="HTML")
+            enviar_mensaje(chat_id, "⏳ Ejecutando... (esto puede tardar unos segundos)")
+            resultado = ejecutar_en_vps("/bin/criarteste")
+            enviar_mensaje(chat_id, f"<b>Resultado:</b>\n<pre>{resultado}</pre>", parse_mode="HTML")
 
         return 'ok', 200
 
     except Exception as e:
-        logger.error(f"❌ Error: {e}")
+        logger.error(f"Error en webhook: {e}")
         return 'error', 500
 
-# === ENVIAR A TELEGRAM ===
-def enviar(chat_id, texto, reply_markup=None, parse_mode=None):
+# === FUNCION PARA ENVIAR MENSAJES A TELEGRAM ===
+def enviar_mensaje(chat_id, texto, reply_markup=None, parse_mode=None):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {
         "chat_id": chat_id,
         "text": texto,
-        "parse_mode": parse_mode,
-        "reply_markup": reply_markup
+        "parse_mode": parse_mode
     }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+
     try:
         response = requests.post(url, json=payload, timeout=10)
-        logger.info(f"📤 Enviado: {response.status_code} - {response.text}")
+        logger.info(f"Enviado a Telegram: {response.status_code} - {response.text}")
     except Exception as e:
-        logger.error(f"❌ No se pudo enviar: {e}")
+        logger.error(f"No se pudo enviar mensaje: {e}")
 
-@app.route('/')
-def home():
-    return "Bot funcionando 🚀", 200
+# === FIN DEL CÓDIGO ===
