@@ -28,7 +28,7 @@ def ssh_command(cmd):
     except Exception as e:
         return f"❌ Error SSH: {str(e)}"
 
-# === MENÚ DE BOTONES ===
+# === MENÚ DE BOTONES (sin "Reiniciar Servicios") ===
 keyboard = {
     "keyboard": [
         [{"text": "🔐 Generar Test"}],
@@ -42,7 +42,7 @@ keyboard = {
 def webhook():
     try:
         data = request.get_json()
-        logger.info(f"Datos recibidos: {data}")
+        logger.info(f"Datos recibidos: {data}")  # Registra todos los datos recibidos
 
         chat_id = data['message']['chat']['id']
         text = data['message']['text']
@@ -59,7 +59,7 @@ def webhook():
 
         elif text == "🔐 Generar Test":
             reply["text"] = "⏳ Generando usuario de prueba..."
-            result = ssh_command("/bin/criarteste")  # Ejecuta directamente
+            result = ssh_command("/bin/criarteste")  # ✅ Ejecuta directamente
             reply["text"] = f"<b>Usuario de prueba creado:</b>\n<pre>{result}</pre>"
             reply["parse_mode"] = "HTML"
 
