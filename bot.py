@@ -5,10 +5,10 @@ import paramiko
 import json
 
 # === CONFIGURACIÓN (usa variables de entorno en Render) ===
-TOKEN = "7985103761:AAEcCdKMmchwm8rkXyLP0eQ5VvLJDNpfLBE"  # ← En Render: añade como secreto
-VPS_IP = "102.129.137.108"
-VPS_USER = "root"
-VPS_PASS = "Tteam2215"
+TOKEN = ""  # ← En Render: añade como secreto
+VPS_IP = ""
+VPS_USER = ""
+VPS_PASS = ""
 
 # URL del webhook (Render te dará esta URL)
 # Ej: https://tu-bot.onrender.com/webhook
